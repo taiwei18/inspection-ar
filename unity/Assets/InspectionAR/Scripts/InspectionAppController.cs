@@ -20,6 +20,10 @@ namespace InspectionAR
 
         IssueApiClient api;
         IssueMarker pendingMarker;
+        ARAnchorManager anchorManager;
+        ARAnchor pendingAnchor;
+        float trackingStableSince = -1f;
+        const float TrackingWarmupSeconds = 1.5f;
         bool submitting;
         int submittedCount;
         string lastStatus;
@@ -28,6 +32,7 @@ namespace InspectionAR
         {
             if (tapPlacer == null) tapPlacer = FindFirstObjectByType<ArTapPlacer>();
             if (planeManager == null) planeManager = FindFirstObjectByType<ARPlaneManager>();
+            anchorManager = FindFirstObjectByType<ARAnchorManager>();
             if (ui == null) ui = GetComponent<IssueReportUI>();
             api = new IssueApiClient(() => BackendSettings.BaseUrl);
         }
@@ -57,28 +62,55 @@ namespace InspectionAR
 
         void Update()
         {
+            if (ARSession.state != ARSessionState.SessionTracking) trackingStableSince = -1f;
+            else if (trackingStableSince < 0f) trackingStableSince = Time.unscaledTime;
             var status = BuildStatusText();
             if (status == lastStatus) return;
             lastStatus = status;
             ui.SetStatus(status);
         }
 
-        void OnPlaneTapped(Pose pose)
+        void OnPlaneTapped(ARPlane plane, Pose pose)
         {
             if (submitting) return;
+            if (ARSession.state != ARSessionState.SessionTracking || trackingStableSince < 0f
+                || Time.unscaledTime - trackingStableSince < TrackingWarmupSeconds)
+            {
+                ui.ShowToast("定位尚未稳定，请缓慢扫描周围后再放置", ToastKind.Info);
+                return;
+            }
+            if (anchorManager == null || !anchorManager.isActiveAndEnabled || anchorManager.subsystem == null)
+            {
+                ui.ShowToast("空间锚点尚未就绪，请稍后重试", ToastKind.Info);
+                return;
+            }
+
+            var anchor = anchorManager.AttachAnchor(plane, pose);
+            if (anchor == null)
+            {
+                ui.ShowToast("无法创建空间锚点，请继续扫描后重试", ToastKind.Info);
+                return;
+            }
 
             // 每次只有一个待提交标记；再次点击平面相当于把标记移到新位置。
-            if (pendingMarker != null) Destroy(pendingMarker.gameObject);
-            pendingMarker = Instantiate(markerPrefab, pose.position, pose.rotation);
-            // 挂上 ARAnchor，让标记固定在真实世界位置，不随跟踪校正漂移。
-            pendingMarker.gameObject.AddComponent<ARAnchor>();
+            RemovePendingMarker();
+            pendingAnchor = anchor;
+            pendingMarker = Instantiate(markerPrefab, anchor.transform, false);
+            pendingMarker.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+            pendingMarker.BindAnchor(anchor);
             pendingMarker.ShowPending();
             ui.ShowForm(pose.position);
+            Debug.Log($"Inspection AR: plane anchor created {anchor.trackableId}");
         }
 
         void Submit()
         {
             if (submitting || pendingMarker == null) return;
+            if (!pendingMarker.HasTracking)
+            {
+                ui.ShowToast("定位暂时丢失，请对准原来区域，恢复后再提交", ToastKind.Info);
+                return;
+            }
 
             var title = ui.Title.Trim();
             if (title.Length == 0)
@@ -107,6 +139,7 @@ namespace InspectionAR
             ui.SetSubmitting(false);
             if (pendingMarker != null) pendingMarker.ShowSubmitted(issue);
             pendingMarker = null; // 已提交的标记留在场景中，不再跟随点击移动
+            pendingAnchor = null;
             submittedCount++;
 
             ui.ResetForm();
@@ -124,9 +157,16 @@ namespace InspectionAR
         void CancelPending()
         {
             if (submitting) return;
-            if (pendingMarker != null) Destroy(pendingMarker.gameObject);
-            pendingMarker = null;
+            RemovePendingMarker();
             ui.HideForm();
+        }
+
+        void RemovePendingMarker()
+        {
+            if (pendingAnchor != null) Destroy(pendingAnchor.gameObject);
+            else if (pendingMarker != null) Destroy(pendingMarker.gameObject);
+            pendingAnchor = null;
+            pendingMarker = null;
         }
 
         void TestConnection()
@@ -162,7 +202,7 @@ namespace InspectionAR
                     break;
                 case ARSessionState.Ready:
                 case ARSessionState.SessionInitializing:
-                    text = "正在初始化：请缓慢移动手机，对准地面或桌面";
+                    text = "定位未稳定或已丢失：请缓慢扫描原来区域，标记恢复前暂时隐藏";
                     break;
                 default:
                     text = TrackingHint();
@@ -173,6 +213,10 @@ namespace InspectionAR
 
         string TrackingHint()
         {
+            if (trackingStableSince < 0f || Time.unscaledTime - trackingStableSince < TrackingWarmupSeconds)
+                return "正在稳定定位，请缓慢扫描周围后再放置标记";
+            if (pendingMarker != null && !pendingMarker.HasTracking)
+                return "标记定位暂时丢失：请对准原来区域，恢复后再提交";
             if (pendingMarker != null) return "填写下方表单后提交；点击其他平面位置可移动标记";
             var planeCount = planeManager != null ? planeManager.trackables.count : 0;
             return planeCount == 0

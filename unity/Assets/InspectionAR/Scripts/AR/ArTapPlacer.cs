@@ -17,7 +17,7 @@ namespace InspectionAR.AR
     [RequireComponent(typeof(ARRaycastManager))]
     public class ArTapPlacer : MonoBehaviour
     {
-        public event Action<Pose> PlaneTapped;
+        public event Action<ARPlane, Pose> PlaneTapped;
 
         static readonly List<ARRaycastHit> ArHits = new List<ARRaycastHit>();
         readonly List<RaycastResult> uiHits = new List<RaycastResult>();
@@ -38,9 +38,10 @@ namespace InspectionAR.AR
 
             foreach (var hit in ArHits) // 结果已按距离由近到远排序
             {
-                if (hit.trackable is ARPlane plane && plane.alignment.IsHorizontal())
+                if (hit.trackable is ARPlane plane && plane.alignment.IsHorizontal()
+                    && plane.trackingState == TrackingState.Tracking)
                 {
-                    PlaneTapped?.Invoke(hit.pose);
+                    PlaneTapped?.Invoke(plane, hit.pose);
                     return;
                 }
             }

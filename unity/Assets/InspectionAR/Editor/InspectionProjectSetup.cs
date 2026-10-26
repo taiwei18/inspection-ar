@@ -67,7 +67,7 @@ namespace InspectionAR.EditorTools
 
             EnsureFolder(GeneratedDir);
             EnsureFolder(Root + "/Scenes");
-            var markerPrefab = CreateMarkerPrefab();
+            CreateMarkerPrefab();
             var planePrefab = CreatePlanePrefab();
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -97,6 +97,11 @@ namespace InspectionAR.EditorTools
             var app = new GameObject("Inspection App");
             var ui = app.AddComponent<IssueReportUI>();
             var controller = app.AddComponent<InspectionAppController>();
+            // 创建其他资源与新场景可能触发资产重导入，在赋值时获取当前的持久化组件。
+            var markerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(GeneratedDir + "/IssueMarker.prefab")
+                .GetComponent<IssueMarker>();
+            if (markerPrefab == null || !EditorUtility.IsPersistent(markerPrefab))
+                throw new System.InvalidOperationException("标记预制体引用无效，无法保存 AR 场景");
             var serialized = new SerializedObject(controller);
             serialized.FindProperty("tapPlacer").objectReferenceValue = tapPlacer;
             serialized.FindProperty("planeManager").objectReferenceValue = planeManager;
@@ -139,9 +144,14 @@ namespace InspectionAR.EditorTools
             AddPart(root, PrimitiveType.Sphere, "Head", new Vector3(0f, 0.18f, 0f), Vector3.one * 0.05f, material);
             root.AddComponent<IssueMarker>();
 
-            var prefab = PrefabUtility.SaveAsPrefabAsset(root, GeneratedDir + "/IssueMarker.prefab");
+            var prefabPath = GeneratedDir + "/IssueMarker.prefab";
+            PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
             Object.DestroyImmediate(root);
-            return prefab.GetComponent<IssueMarker>();
+            // 首次创建后重新导入、加载资产，避免序列化到已销毁的临时组件引用。
+            AssetDatabase.ImportAsset(prefabPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+            var marker = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath).GetComponent<IssueMarker>();
+            if (marker == null) throw new System.InvalidOperationException("生成的标记预制体缺少 IssueMarker 组件");
+            return marker;
         }
 
         static void AddPart(GameObject parent, PrimitiveType type, string name, Vector3 localPosition, Vector3 localScale, Material material)

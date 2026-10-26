@@ -21,6 +21,9 @@ unity/.idea/
 unity/*.csproj
 unity/*.sln
 unity/*.slnx
+# AR Foundation XR Simulation 的个人偏好设置
+unity/Assets/XR/UserSimulationSettings/
+unity/Assets/XR/UserSimulationSettings.meta
 
 # 构建产物与系统文件
 *.apk

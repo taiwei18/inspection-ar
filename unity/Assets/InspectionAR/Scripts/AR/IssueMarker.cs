@@ -1,5 +1,7 @@
 using InspectionAR.Data;
 using UnityEngine;
+using UnityEngine.XR.ARFoundation;
+using UnityEngine.XR.ARSubsystems;
 
 namespace InspectionAR.AR
 {
@@ -12,6 +14,12 @@ namespace InspectionAR.AR
 
         Renderer[] renderers;
         bool pending;
+        ARAnchor anchor;
+
+        public bool HasTracking => anchor != null && anchor.trackingState == TrackingState.Tracking
+            && ARSession.state == ARSessionState.SessionTracking;
+
+        public void BindAnchor(ARAnchor value) => anchor = value;
 
         public string IssueId { get; private set; }
 
@@ -22,6 +30,8 @@ namespace InspectionAR.AR
 
         void Update()
         {
+            // 暂时隐藏失去跟踪的内容；保留锚点，等待 ARCore 恢复定位。
+            foreach (var renderer in renderers) renderer.enabled = HasTracking;
             if (!pending) return;
             transform.localScale = Vector3.one * (1f + 0.08f * Mathf.Sin(Time.time * 6f));
         }
