@@ -12,6 +12,7 @@ Unity AR (Android 真机) ──POST /api/issues──▶ Go 后端 (JSON 文件
 | `web/` | React + TypeScript 管理端（Vite） |
 | `unity/` | Unity 项目（AR Foundation + ARCore） |
 | `AI_LOG.md` | AI 使用记录 |
+| `docs/DELIVERY.md` | 逐项验收、核心代码说明、演示录屏脚本 |
 
 ## 使用的版本
 
@@ -20,9 +21,9 @@ Unity AR (Android 真机) ──POST /api/issues──▶ Go 后端 (JSON 文件
 | Go | 1.22 及以上（用到 1.22 的路由语法），开发和测试使用 1.27.0 |
 | Node.js | 22.x（开发使用 22.23） |
 | React / TypeScript / Vite | 19.3 / 7.0 / 8.3 |
-| Unity | 6000.0 LTS（Unity 6），内置渲染管线 |
-| AR Foundation / ARCore XR Plugin | 6.0.3 / 6.0.3 |
-| Input System | 1.11.2 |
+| Unity | 6000.0 LTS（本机验证：6000.0.85f1），内置渲染管线 |
+| AR Foundation / ARCore XR Plugin | 6.0.7 / 6.0.7 |
+| Input System | 1.20.0 |
 | 目标设备 | Android 7.0（API 24）及以上、支持 ARCore 的手机 |
 
 ## 启动
@@ -72,6 +73,8 @@ npm run dev
    - 地址保存在 PlayerPrefs，App 重启后仍然有效；默认值在 `BackendSettings.DefaultUrl` 中修改。
 4. 连不上时依次检查：IP 是否正确、电脑防火墙是否放行 8080 端口、手机浏览器能否打开 `http://IP:8080/api/health`。
 
+USB 调试时也可以运行 `adb reverse tcp:8080 tcp:8080`，再把 App 后端地址设为 `http://127.0.0.1:8080`。此时请求通过 USB 转发到电脑，不要求手机和电脑处于同一 Wi-Fi；拔线或重启 ADB 后需要重新设置转发。电脑管理端仍打开 <http://localhost:5173>，每 5 秒刷新一次问题列表。
+
 ## 接口说明
 
 前缀统一为 `/api`，请求和响应都是 UTF-8 编码的 JSON。
@@ -93,7 +96,7 @@ npm run dev
 - `title` 必填，去掉首尾空格后不能为空，最多 100 字；`description` 可选，最多 1000 字。
 - `priority` 只能是 `low` / `medium` / `high`；`position` 必填。
 - `id`（UUID v4）、`status`（固定为 `open`）、`createdAt` / `updatedAt`（RFC 3339，UTC）由后端生成。
-- 坐标保留 3 位小数（毫米），单位是米，坐标系是 AR 会话坐标系。
+- 坐标保留 3 位小数，单位是米，坐标系是本次 AR 会话坐标系；这是数值存储精度，不代表毫米级物理定位精度。
 
 错误响应统一为：
 
@@ -113,7 +116,7 @@ npm run dev
 - **持久化**：JSON 文件。每次写操作先写临时文件再重命名替换，进程中途退出也不会留下写了一半的文件；先写盘成功再更新内存；数据文件损坏时拒绝启动，避免被空数据覆盖。
 - **点按钮不误放标记**：放置前用 `EventSystem.RaycastAll` 检查触点下有没有 UI；输入框正在编辑或软键盘打开时也忽略点击（`ArTapPlacer.IsBlockedByUi`）。
 - **只放在水平面**：`ARPlaneManager` 只检测水平面，射线检测使用 `PlaneWithinPolygon`，并再次检查平面朝向。
-- **标记稳定**：标记挂 `ARAnchor`，跟踪校正时不会漂移；待提交为黄色并闪动，提交后按优先级着色（红 / 橙 / 绿）。
+- **标记定位**：通过 `ARAnchorManager.AttachAnchor` 将锚点绑定到点击的水平面，标记作为子物体。跟踪连续稳定 1.5 秒后允许放置；锚点跟踪丢失时隐藏标记并暂停提交，恢复后显示。无需参考图。锚点能减轻漂移，但不保证重新定位后完全无误差。
 - **提交反馈**：成功或失败都有提示条；失败时保留标记和表单内容，可以直接重试；后端返回的错误信息（如「title 不能为空」）原样显示。
 - **React 不白屏**：请求有 8 秒超时，后端不可用时显示错误条和重试按钮，已加载的数据继续显示；另有 ErrorBoundary 兜底渲染异常。
 
@@ -121,7 +124,7 @@ npm run dev
 
 ### 已完成
 
-- 必做功能：三端全部实现，详见上文。
+- 必做功能已实现；实际验证范围、尚待录制的交付材料见 [验收与演示指南](docs/DELIVERY.md)。
 - 额外功能：
   - React：每 5 秒自动刷新并高亮新上报的问题，可按状态 / 优先级筛选、搜索，有状态统计；
   - Unity：标记颜色随优先级变化，在 App 内配置并测试后端地址；
@@ -133,10 +136,18 @@ npm run dev
 
 ### 已知问题与限制
 
-- **Unity 部分尚未在 Unity 编辑器和真机上验证**：开发这些代码的电脑上没有安装 Unity，C# 只针对 Unity API 桩代码做过编译检查（语法、类型、互相引用）。真实 API 签名、场景生成菜单和真机效果需要在 Unity 6000.0 中打开后确认。<!-- 验证后更新这一条 -->
+- **Unity 编辑器、Android 打包和真机上报已验证**：2026-10-26 至 27 使用 Unity 6000.0.85f1 完成导入、C# 编译、Android 配置、ARCore 启用与场景生成，XR Origin 自动创建成功。AR Foundation / ARCore 实际使用 6.0.7，Input System 使用 1.20.0（首次导入由编辑器升级）。修正版 APK 已安装并运行于 vivo X200s（Android 15），补装 Google Play Services for AR 1.57.0 后确认相机画面、AR 跟踪及平面点击上报；后端实际收到手机提交的“袜子”“电脑”“衣服”，网页代理接口返回相同记录。场景生成时的标记预制体空引用已修复，保存并重新打开场景的引用检查通过；ARCore 6.0.7 与 AGP 9 的 AAR 命名空间冲突已通过 `AndroidBuildCompatibility` 自动添加兼容配置解决。APK 位于 `unity/Builds/InspectionAR.apk`，构建日志位于 `unity/Logs/`（均不入库）。2026-10-27 按用户要求撤回参考图方案，恢复平面附着锚点与跟踪保护。撤回后的代码已用 Unity 6000.0.85f1 命令行模式按 Android 目标重新编译，无报错；但 `unity/Builds/InspectionAR.apk` 的打包时间（07:18）早于最后一次脚本修改（07:21），录制演示视频前需要重新打包、安装并在真机上复测。
+- 本机 Windows 构建仍有环境限制：Unity 调用 Gradle 时出现 Java `Unable to establish loopback connection`。本次通过直接调用生成项目的 Gradle，并为 Java 设置 `-Djava.nio.channels.spi.SelectorProvider=sun.nio.ch.WindowsSelectorProvider` 等兼容参数完成 APK 构建；编辑器一键 Build And Run 的该环境问题尚未消除。
 - 界面使用 Unity 内置字体，中文依赖手机系统字体回退；如果个别机型中文显示为方框，需要导入中文字体。
-- Unity 包固定为 AR Foundation 6.0.3。使用更新的 Unity 6.x 时，可以在 Package Manager 中把 AR Foundation 和 ARCore XR Plugin 升级到同一个版本。
+- Unity 包当前固定为 AR Foundation / ARCore XR Plugin 6.0.7。更换 Unity 编辑器版本时，首次导入可能自动调整依赖版本，应检查 `Packages/manifest.json`，并保持 AR Foundation 与 ARCore XR Plugin 版本一致。
 - 坐标只在本次 AR 会话内有意义，App 重启后原点会变化（任务书不要求恢复）。
+- 转开相机再转回来时，ARCore 重新定位可能产生偏差。放置前应缓慢扫描有纹理、光照充足的固定桌面或地面，避免快速旋转、遮挡相机或只对着白墙；定位丢失时对准原区域等待恢复。标记固定在空间位置，不会跟随衣物等被移动的物体。2026-10-27 已改为平面附着锚点并增加跟踪保护，真机复测仍有几厘米偏移，精度问题尚未解决。该次日志确认平面锚点创建成功，随后出现多次 `VIO_OUTPUT_NOT_TRACKING`；这些记录说明会话存在跟踪不稳定，但尚不能将每次偏移与丢失跟踪一一对应。参考图方案已撤回，最终版本不要求张贴或扫描图片；当前不能承诺精确回到原点。
 - JSON 文件存储每次全量重写，适合原型级数据量；不支持多个后端实例同时写同一个文件。
 - 没有鉴权，CORS 默认允许任意来源，只适合局域网演示。
 - 在 Windows 上用 curl 或 PowerShell 5 测试接口时，命令行里的中文可能按 GBK 发送，后端会返回 400「请使用 UTF-8 编码提交」。可以把请求体存成 UTF-8 文件后用 `--data-binary @file.json` 发送，或改用 PowerShell 7。
+
+## 验收与交付
+
+按任务书提供完整 `unity/`、`web/`、`backend/` 源码、本文、[AI_LOG.md](AI_LOG.md) 和两段各 3～5 分钟演示视频。逐项验收、核心代码说明及录屏脚本见 [docs/DELIVERY.md](docs/DELIVERY.md)。
+
+当前视频尚未录制，分享链接尚未创建；这些不应标记为已交付。使用 GitHub / Gitee 时保留完整 Git 历史；使用网盘时统一打包源码、文档和视频，提供评审期间可访问的链接及必要的提取码。APK 为可选材料，不要求公网部署。不要提交本地令牌、账号信息或含隐私的日志/测试数据。
