@@ -1,0 +1,29 @@
+# Go
+backend/data/
+backend/*.exe
+
+# Node
+web/node_modules/
+web/dist/
+*.local
+
+# Unity（只提交 Assets、Packages、ProjectSettings）
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]ser[Ss]ettings/
+unity/[Mm]emoryCaptures/
+unity/.vs/
+unity/.idea/
+unity/*.csproj
+unity/*.sln
+unity/*.slnx
+
+# 构建产物与系统文件
+*.apk
+*.aab
+.DS_Store
+Thumbs.db
