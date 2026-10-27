@@ -78,7 +78,7 @@ AI 在执行过程中提问、我作答的内容不是主动发送的 Prompt，�
 
 ### Prompt 原文
 
-> 在 Unity 6000.0 LTS 里打开 unity/，按 README.md 第 3 节操作：先执行菜单「Inspection AR → 1. 配置 Android 构建参数」，再到 XR 设置里勾选 ARCore，然后执行「Inspection AR → 2. 生成 AR 场景」，最后打包到手机。Unity 包版本（AR Foundation 6.0.3 等）和 XR Origin 的自动创建菜单都是凭经验写的，第一次打开最可能在这里出问题，报错发给我就行。验证通过后，记得更新 README「已知问题」里的第一条。 什么意思你能做吗
+> 在 Unity 6000.0 LTS 里打开 unity/，按 README.md 第 3 节操作：先执行菜单「Inspection AR → 1. 配置 Android 构建参数」，再到 XR 设置里勾选 ARCore，然后执行「Inspection AR → 2. 生成 AR 场景」，最后打包到手机。Unity 包版本（AR Foundation 6.0.3 等）和 XR Origin 的自动创建菜单都是凭经验写的，第一次打开最可能在这里出问题，报错发给我就行。验证通过后，记得更新 README「已知问题」里的第一条。 什么意思
 
 ### 结果
 
@@ -91,7 +91,7 @@ AI 在执行过程中提问、我作答的内容不是主动发送的 Prompt，�
 
 ### Prompt 原文
 
-> 你安装吧都
+> 你安装吧
 
 ### 结果
 
@@ -181,7 +181,7 @@ AI 在执行过程中提问、我作答的内容不是主动发送的 Prompt，�
 
 ### Prompt 原文
 
-> 提交吧 还有远程仓库地址为https://github.com/taiwei18/inspection-ar.git‘’
+> 提交吧 还有远程仓库地址为https://github.com/taiwei18/inspection-ar.git
 
 ### 结果
 
