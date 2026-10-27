@@ -1,0 +1,23 @@
+[Unit]
+Description=Inspection AR backend (Go)
+After=network.target
+
+[Service]
+Type=simple
+User=inspection
+Group=inspection
+WorkingDirectory=/opt/inspection-ar
+# 只监听本机，由 nginx 对外提供 /api；数据文件在 /opt/inspection-ar/data
+ExecStart=/opt/inspection-ar/inspection-backend -addr 127.0.0.1:8080 -data /opt/inspection-ar/data/issues.json -cors-origin http://117.72.117.250
+Restart=on-failure
+RestartSec=3
+
+# 最小权限：除数据目录外文件系统只读
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/inspection-ar/data
+
+[Install]
+WantedBy=multi-user.target
