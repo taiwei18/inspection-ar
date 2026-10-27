@@ -26,6 +26,7 @@ namespace InspectionAR.UI
         public event Action SubmitClicked;
         public event Action CancelClicked;
         public event Action TestConnectionClicked;
+        public event Action PlaneLockClicked;
         public event Action<string> ServerUrlEdited;
 
         static readonly Color PanelColor = new Color(0.08f, 0.1f, 0.14f, 0.88f);
@@ -35,10 +36,15 @@ namespace InspectionAR.UI
         static readonly Color InfoToastColor = new Color(0.15f, 0.18f, 0.24f, 0.95f);
         static readonly Color SuccessToastColor = new Color(0.12f, 0.55f, 0.3f, 0.95f);
         static readonly Color ErrorToastColor = new Color(0.78f, 0.18f, 0.18f, 0.95f);
+        static readonly Color GoodQualityColor = new Color(0.45f, 0.85f, 0.55f);
+        static readonly Color FairQualityColor = new Color(1f, 0.78f, 0.3f);
+        static readonly Color PoorQualityColor = new Color(1f, 0.5f, 0.45f);
 
         readonly Dictionary<string, Button> priorityButtons = new Dictionary<string, Button>();
         Text statusText;
         Text positionText;
+        Text qualityText;
+        Text planeLockLabel;
         Text toastText;
         Text submitLabel;
         InputField serverInput;
@@ -75,6 +81,15 @@ namespace InspectionAR.UI
         }
 
         public void HideForm() => formPanel.SetActive(false);
+
+        public void SetPlacementQuality(string text, PlacementLevel level)
+        {
+            qualityText.text = text;
+            qualityText.color = level == PlacementLevel.Good ? GoodQualityColor
+                : level == PlacementLevel.Fair ? FairQualityColor : PoorQualityColor;
+        }
+
+        public void SetPlaneLocked(bool locked) => planeLockLabel.text = locked ? "继续扫描" : "锁定平面";
 
         public void ResetForm()
         {
@@ -164,8 +179,12 @@ namespace InspectionAR.UI
             serverInput.onEndEdit.AddListener(value => ServerUrlEdited?.Invoke(value));
             UiFactory.SetWidth(serverInput, 0, 1);
 
-            var testButton = UiFactory.CreateButton(row, "测试连接", AccentColor, 84, () => TestConnectionClicked?.Invoke());
-            UiFactory.SetWidth(testButton, 220, 0);
+            var testButton = UiFactory.CreateButton(row, "测试", AccentColor, 84, () => TestConnectionClicked?.Invoke());
+            UiFactory.SetWidth(testButton, 140, 0);
+
+            var lockButton = UiFactory.CreateButton(row, "锁定平面", NeutralColor, 84, () => PlaneLockClicked?.Invoke());
+            UiFactory.SetWidth(lockButton, 210, 0);
+            planeLockLabel = lockButton.GetComponentInChildren<Text>();
         }
 
         void BuildForm(Transform parent)
@@ -177,6 +196,7 @@ namespace InspectionAR.UI
 
             UiFactory.CreateText(panel.transform, "上报问题", 42, Color.white, TextAnchor.MiddleLeft).fontStyle = FontStyle.Bold;
             positionText = UiFactory.CreateText(panel.transform, string.Empty, 28, LabelColor, TextAnchor.MiddleLeft);
+            qualityText = UiFactory.CreateText(panel.transform, string.Empty, 28, LabelColor, TextAnchor.MiddleLeft);
 
             UiFactory.CreateText(panel.transform, "标题（必填）", 30, LabelColor, TextAnchor.MiddleLeft);
             titleInput = UiFactory.CreateInputField(panel.transform, "例如：入口墙面破损", false, 100, 96);

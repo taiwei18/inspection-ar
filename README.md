@@ -61,7 +61,14 @@ npm run dev
 3. 菜单 **Inspection AR → 1. 配置 Android 构建参数**：设置包名、IL2CPP + ARM64、最低 API 24、OpenGLES3、允许 HTTP 明文请求。
 4. **Edit → Project Settings → XR Plug-in Management → Android 页签 → 勾选 ARCore**；再打开其中的 Project Validation，如果有提示就点 **Fix All**。
 5. 菜单 **Inspection AR → 2. 生成 AR 场景**：自动生成 `Assets/InspectionAR/Scenes/InspectionAR.unity`、平面和标记预制体，并加入构建场景列表。
-6. File → Build Profiles → Android → Switch Platform，连上手机后点 **Build And Run**。
+6. File → Build Profiles → Android → Switch Platform，连上手机后点 **Build And Run**；或者执行菜单 **Inspection AR → 3. 构建 APK**，输出到 `unity/Builds/InspectionAR.apk`。
+
+   如果 Windows 上构建报 Java `Unable to establish loopback connection`，先设置下面的环境变量，再从同一个终端启动 Unity 或执行命令行构建（2026-10-27 已用此方法验证可以构建成功）：
+
+   ```powershell
+   $env:JAVA_TOOL_OPTIONS = "-Djava.net.preferIPv4Stack=true -Djava.nio.channels.spi.SelectorProvider=sun.nio.ch.WindowsSelectorProvider -Djdk.net.unixdomain.tmpdir=D:/code/inspection-ar/unity/Builds"
+   & "D:\Unity\Editors\6000.0.85f1\Editor\Unity.exe" -batchmode -quit -projectPath unity -buildTarget Android -executeMethod InspectionAR.EditorTools.AndroidBuild.BuildApk -logFile unity/Logs/build.log
+   ```
 
 > 如果第 5 步提示找不到 XR Origin 菜单：先在 Hierarchy 中右键 **XR → XR Origin (Mobile AR)**，再执行一次第 5 步。
 
@@ -75,6 +82,8 @@ npm run dev
 4. 连不上时依次检查：IP 是否正确、电脑防火墙是否放行 8080 端口、手机浏览器能否打开 `http://IP:8080/api/health`。
 
 USB 调试时也可以运行 `adb reverse tcp:8080 tcp:8080`，再把 App 后端地址设为 `http://127.0.0.1:8080`。此时请求通过 USB 转发到电脑，不要求手机和电脑处于同一 Wi-Fi；拔线或重启 ADB 后需要重新设置转发。电脑管理端仍打开 <http://localhost:5173>，每 5 秒刷新一次问题列表。
+
+> 覆盖安装新版 APK 后，App 会沿用之前保存的后端地址。提交时提示「无法连接后端」，先检查顶部地址是否与当前连接方式一致（USB 转发用 `127.0.0.1:8080`，Wi-Fi 用电脑的局域网 IP），再点「测试」。
 
 ## 接口说明
 
@@ -117,7 +126,14 @@ USB 调试时也可以运行 `adb reverse tcp:8080 tcp:8080`，再把 App 后端
 - **持久化**：JSON 文件。每次写操作先写临时文件再重命名替换，进程中途退出也不会留下写了一半的文件；先写盘成功再更新内存；数据文件损坏时拒绝启动，避免被空数据覆盖。
 - **点按钮不误放标记**：放置前用 `EventSystem.RaycastAll` 检查触点下有没有 UI；输入框正在编辑或软键盘打开时也忽略点击（`ArTapPlacer.IsBlockedByUi`）。
 - **只放在水平面**：`ARPlaneManager` 只检测水平面，射线检测使用 `PlaneWithinPolygon`，并再次检查平面朝向。
-- **标记定位**：通过 `ARAnchorManager.AttachAnchor` 将锚点绑定到点击的水平面，标记作为子物体。跟踪连续稳定 1.5 秒后允许放置；锚点跟踪丢失时隐藏标记并暂停提交，恢复后显示。无需参考图。锚点能减轻漂移，但不保证重新定位后完全无误差。
+- **标记定位**：通过 `ARAnchorManager.AttachAnchor` 将锚点绑定到点击的水平面，标记作为子物体。跟踪正常并连续稳定 1.5 秒后才允许放置；锚点跟踪丢失时隐藏标记并暂停提交，恢复后显示。不需要参考图。
+- **减少偏移和画面变化**（细节见 [docs/DELIVERY.md](docs/DELIVERY.md) 3.1、3.4）：
+  - 放置质量门槛：拒绝刚识别出来或太小的平面，并按落点附近的特征点数量提示定位质量；
+  - 跟踪原因提示：光线不足、缺少纹理、移动太快、重新定位中；
+  - 多角度观察引导；
+  - 放下标记后自动锁定并淡化平面；
+  - 标记位置平滑过渡。
+  锚点能减轻漂移，但不保证重新定位后完全没有误差。
 - **提交反馈**：成功或失败都有提示条；失败时保留标记和表单内容，可以直接重试；后端返回的错误信息（如「title 不能为空」）原样显示。
 - **React 不白屏**：请求有 8 秒超时，后端不可用时显示错误条和重试按钮，已加载的数据继续显示；另有 ErrorBoundary 兜底渲染异常。
 
@@ -137,12 +153,13 @@ USB 调试时也可以运行 `adb reverse tcp:8080 tcp:8080`，再把 App 后端
 
 ### 已知问题与限制
 
-- **Unity 编辑器、Android 打包和真机上报已验证**：2026-10-26 至 27 使用 Unity 6000.0.85f1 完成导入、C# 编译、Android 配置、ARCore 启用与场景生成，XR Origin 自动创建成功。AR Foundation / ARCore 实际使用 6.0.7，Input System 使用 1.20.0（首次导入由编辑器升级）。修正版 APK 已安装并运行于 vivo X200s（Android 15），补装 Google Play Services for AR 1.57.0 后确认相机画面、AR 跟踪及平面点击上报；后端实际收到手机提交的“袜子”“电脑”“衣服”，网页代理接口返回相同记录。场景生成时的标记预制体空引用已修复，保存并重新打开场景的引用检查通过；ARCore 6.0.7 与 AGP 9 的 AAR 命名空间冲突已通过 `AndroidBuildCompatibility` 自动添加兼容配置解决。APK 位于 `unity/Builds/InspectionAR.apk`，构建日志位于 `unity/Logs/`（均不入库）。2026-10-27 按用户要求撤回参考图方案，恢复平面附着锚点与跟踪保护。撤回后的代码已用 Unity 6000.0.85f1 命令行模式按 Android 目标重新编译，无报错；但 `unity/Builds/InspectionAR.apk` 的打包时间（07:18）早于最后一次脚本修改（07:21），录制演示视频前需要重新打包、安装并在真机上复测。
-- 本机 Windows 构建仍有环境限制：Unity 调用 Gradle 时出现 Java `Unable to establish loopback connection`。本次通过直接调用生成项目的 Gradle，并为 Java 设置 `-Djava.nio.channels.spi.SelectorProvider=sun.nio.ch.WindowsSelectorProvider` 等兼容参数完成 APK 构建；编辑器一键 Build And Run 的该环境问题尚未消除。
+- **Unity 编辑器、Android 打包和真机上报已验证**：2026-10-26 至 27 使用 Unity 6000.0.85f1 完成导入、C# 编译、Android 配置、ARCore 启用与场景生成，XR Origin 自动创建成功。AR Foundation / ARCore 实际使用 6.0.7，Input System 使用 1.20.0（首次导入由编辑器升级）。修正版 APK 已安装并运行于 vivo X200s（Android 15），补装 Google Play Services for AR 1.57.0 后确认相机画面、AR 跟踪及平面点击上报；后端实际收到手机提交的“袜子”“电脑”“衣服”，网页代理接口返回相同记录。场景生成时的标记预制体空引用已修复，保存并重新打开场景的引用检查通过；ARCore 6.0.7 与 AGP 9 的 AAR 命名空间冲突已通过 `AndroidBuildCompatibility` 自动添加兼容配置解决。APK 位于 `unity/Builds/InspectionAR.apk`，构建日志位于 `unity/Logs/`（均不入库）。2026-10-27 按用户要求撤回参考图方案，恢复平面附着锚点与跟踪保护。撤回后的代码已用 Unity 6000.0.85f1 命令行模式按 Android 目标重新编译，无报错；之后在此基础上完成第三版定位优化，2026-10-27 08:08 重新打包 `unity/Builds/InspectionAR.apk` 并在真机上复测（结果见下文定位偏差一条）。
+- 本机 Windows 构建的环境问题：Unity 调用 Gradle 时会出现 Java `Unable to establish loopback connection`。启动 Unity 前设置 `JAVA_TOOL_OPTIONS`（见「3. Unity 客户端」第 6 步）后，Unity 自带的构建可以直接成功，不再需要手动调用 Gradle。不设置这个变量时，编辑器里一键 Build And Run 仍会失败。
 - 界面使用 Unity 内置字体，中文依赖手机系统字体回退；如果个别机型中文显示为方框，需要导入中文字体。
 - Unity 包当前固定为 AR Foundation / ARCore XR Plugin 6.0.7。更换 Unity 编辑器版本时，首次导入可能自动调整依赖版本，应检查 `Packages/manifest.json`，并保持 AR Foundation 与 ARCore XR Plugin 版本一致。
 - 坐标只在本次 AR 会话内有意义，App 重启后原点会变化（任务书不要求恢复）。
-- 转开相机再转回来时，ARCore 重新定位可能产生偏差。放置前应缓慢扫描有纹理、光照充足的固定桌面或地面，避免快速旋转、遮挡相机或只对着白墙；定位丢失时对准原区域等待恢复。标记固定在空间位置，不会跟随衣物等被移动的物体。2026-10-27 已改为平面附着锚点并增加跟踪保护，真机复测仍有几厘米偏移，精度问题尚未解决。该次日志确认平面锚点创建成功，随后出现多次 `VIO_OUTPUT_NOT_TRACKING`；这些记录说明会话存在跟踪不稳定，但尚不能将每次偏移与丢失跟踪一一对应。参考图方案已撤回，最终版本不要求张贴或扫描图片；当前不能承诺精确回到原点。
+- 转开相机再转回来时，ARCore 重新定位可能产生偏差。放置前应缓慢扫描有纹理、光照充足的固定桌面或地面，避免快速旋转、遮挡相机或只对着白墙；定位丢失时对准原区域等待恢复。标记固定在空间位置，不会跟随衣物等被移动的物体。2026-10-27 已改为平面附着锚点并增加跟踪保护，真机复测仍有几厘米偏移，精度问题尚未解决。该次日志确认平面锚点创建成功，随后出现多次 `VIO_OUTPUT_NOT_TRACKING`；这些记录说明会话存在跟踪不稳定，但尚不能将每次偏移与丢失跟踪一一对应。参考图方案已撤回，最终版本不要求张贴或扫描图片；当前不能承诺精确回到原点。2026-10-27 第三版增加了放置质量门槛、多角度观察引导、平面锁定与标记平滑。同日在 vivo X200s 上复测：在定位质量「良好」的位置放置，并从多个角度观察后提交，转开再转回来，主观感受「明显改善」，平面也不再持续变化。复测约 8 分钟，放置 8 次：定位质量良好 5 次（30～185 个特征点）、一般 1 次、较差 2 次（0 个特征点）；Unity 侧没有异常。本次评估是目测，没有用尺子量化偏差，仍不能承诺精确回到原点。
+- 同一次复测中，ARCore 底层日志报了 33 次跟踪丢失（`VIO_OUTPUT_NOT_TRACKING`）、88 次加速度计回调缺失、120 次 IMU 时间戳乱序。这台手机的传感器数据可能不太规整，这会影响 ARCore 的定位精度，应用层无法修正。换一台 ARCore 认证机型对比，可以确认是否与设备有关。
 - JSON 文件存储每次全量重写，适合原型级数据量；不支持多个后端实例同时写同一个文件。
 - 没有鉴权，CORS 默认允许任意来源，只适合局域网演示。
 - 在 Windows 上用 curl 或 PowerShell 5 测试接口时，命令行里的中文可能按 GBK 发送，后端会返回 400「请使用 UTF-8 编码提交」。可以把请求体存成 UTF-8 文件后用 `--data-binary @file.json` 发送，或改用 PowerShell 7。

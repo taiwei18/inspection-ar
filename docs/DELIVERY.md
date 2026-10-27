@@ -61,20 +61,29 @@
    - `IsBlockedByUi` 依次判断：软键盘是否可见；输入框是否正在编辑；用 `EventSystem.RaycastAll` 检查触点下有没有 UI。任何一项为真就忽略这次点击，这对应任务书「点按钮或输入框不误放标记」。
    - `ARRaycastManager.Raycast(..., PlaneWithinPolygon)`：只接受落在已识别平面多边形内部的点。取最近的、处于跟踪状态的水平面，触发 `PlaneTapped(plane, pose)`。
 2. **放置标记** — [InspectionAppController.cs](../unity/Assets/InspectionAR/Scripts/InspectionAppController.cs) `OnPlaneTapped`
-   - 跟踪连续稳定 1.5 秒后才允许放置，避免在定位还不可靠时创建锚点。
-   - `ARAnchorManager.AttachAnchor(plane, pose)` 把锚点附着在平面上，标记作为锚点的子物体。ARCore 修正空间位置时，锚点和标记一起调整。
+   - 跟踪正常（`notTrackingReason == None`）并连续稳定 1.5 秒后才允许放置，避免在定位还不可靠时创建锚点。
+   - 放置前由 [PlacementQuality.cs](../unity/Assets/InspectionAR/Scripts/AR/PlacementQuality.cs) 评估：
+     - 识别不到 1 秒的平面、短边小于 15cm 的平面直接拒绝，因为这时平面位置和高度还在快速修正；
+     - 统计落点 30cm 内 ARCore 特征点的数量，按「良好 / 一般 / 较差」显示在表单里。纹理太少的位置，回来时最容易偏。
+   - `ARAnchorManager.AttachAnchor(plane, pose)` 把锚点附着在平面上，标记作为锚点的子物体。ARCore 修正空间位置时，锚点和标记一起调整。平面已被合并时，附着到合并后的平面上。
    - 同一时间只有一个待提交标记，再点一次相当于移动标记。
-3. **跟踪丢失时的保护** — [IssueMarker.cs](../unity/Assets/InspectionAR/Scripts/AR/IssueMarker.cs) `HasTracking`
-   - 锚点或会话不在 `Tracking` 状态时隐藏标记、拒绝提交，恢复后再显示，避免把漂移中的位置上报出去。
-4. **提交** — `Submit` → [IssueApiClient.cs](../unity/Assets/InspectionAR/Scripts/Net/IssueApiClient.cs) `Send<T>`
+3. **定位稳定性**
+   - **平面锁定与淡化** — [PlaneDisplay.cs](../unity/Assets/InspectionAR/Scripts/AR/PlaneDisplay.cs)：放下第一个标记后自动锁定平面（`requestedDetectionMode = None`），不再检测、扩展、合并平面，画面不再「一直在变」；用户可点「继续扫描」解锁。锁定或有待提交标记时，平面淡化为浅色轮廓。颜色用 `MaterialPropertyBlock` 设置，不修改共享材质。
+   - **多角度观察引导** — [ViewCoverage.cs](../unity/Assets/InspectionAR/Scripts/AR/ViewCoverage.cs)：标记周围一圈分成 8 个 45° 扇区，统计用户从几个方向看过标记，建议至少 3 个。从多个角度看过的区域，ARCore 记录的环境信息更完整，转开再回来时修正得更准。只做提示，不强制。
+   - **跟踪原因提示** — `NotTrackingHint`：把 ARCore 的跟踪受限原因翻译成能照做的话，例如「光线不足」「画面缺少纹理」「移动太快」「正在重新定位」。
+4. **标记显示** — [IssueMarker.cs](../unity/Assets/InspectionAR/Scripts/AR/IssueMarker.cs)
+   - 平滑：`LateUpdate` 用与帧率无关的指数平滑（时间常数 0.15 秒）跟随锚点，ARCore 的微小修正不会表现为抖动；跳变超过 30cm 时直接跳过去。上报坐标用锚点的真实位置（`AnchorPosition`），不用平滑中的显示位置。
+   - 跟踪丢失时的保护：锚点或会话不在 `Tracking` 状态时隐藏标记、拒绝提交；恢复后直接显示在修正后的位置，避免把漂移中的位置上报出去。
+5. **提交** — `Submit` → [IssueApiClient.cs](../unity/Assets/InspectionAR/Scripts/Net/IssueApiClient.cs) `Send<T>`
    - 用 `UnityWebRequest` 协程发 JSON，超时 8 秒，回调在主线程执行，可以直接更新 UI。
    - 先解析再调用回调，界面代码出错不会被误报成「响应解析失败」。
    - `DescribeError` 区分两类错误：后端返回 4xx/5xx 时显示后端的错误信息；连不上时提示检查地址、Wi-Fi 和防火墙。
    - 失败时保留标记和表单内容，可以直接重试。
-5. **后端地址** — [BackendSettings.cs](../unity/Assets/InspectionAR/Scripts/Net/BackendSettings.cs)：保存在 PlayerPrefs，自动补全 `http://`。
-6. **界面** — [IssueReportUI.cs](../unity/Assets/InspectionAR/Scripts/UI/IssueReportUI.cs) 和 [UiFactory.cs](../unity/Assets/InspectionAR/Scripts/UI/UiFactory.cs)：在 `Awake` 中用代码搭建 UGUI，只负责显示和收集输入，不含业务逻辑。
-7. **编辑器工具**
+6. **后端地址** — [BackendSettings.cs](../unity/Assets/InspectionAR/Scripts/Net/BackendSettings.cs)：保存在 PlayerPrefs，自动补全 `http://`。
+7. **界面** — [IssueReportUI.cs](../unity/Assets/InspectionAR/Scripts/UI/IssueReportUI.cs) 和 [UiFactory.cs](../unity/Assets/InspectionAR/Scripts/UI/UiFactory.cs)：在 `Awake` 中用代码搭建 UGUI，只负责显示和收集输入，不含业务逻辑。
+8. **编辑器工具**
    - [InspectionProjectSetup.cs](../unity/Assets/InspectionAR/Editor/InspectionProjectSetup.cs)：两个菜单，分别一键配置 Android 构建参数、生成场景和预制体，避免手工连线出错。
+   - [AndroidBuild.cs](../unity/Assets/InspectionAR/Editor/AndroidBuild.cs)：菜单「3. 构建 APK」，也可以在命令行用 `-executeMethod` 调用，失败时返回非 0 退出码。
    - [AndroidBuildCompatibility.cs](../unity/Assets/InspectionAR/Editor/AndroidBuildCompatibility.cs)：构建时向 `gradle.properties` 追加 `android.uniquePackageNames=false`，解决 ARCore 6.0.x 两个 AAR 命名空间相同、与 AGP 9 冲突的问题。
 
 **坐标含义**：上报的 `x/y/z` 是本次 AR 会话坐标系下的位置（米），原点是 App 启动时手机的位置，App 重启后原点会变（任务书不要求恢复）。
@@ -120,8 +129,19 @@
 1. 第一版：直接在标记上挂 `ARAnchor`。
 2. 第二版：改为附着在平面上的锚点，并增加 1.5 秒稳定期和丢失跟踪时的保护。偏移仍有几厘米。
 3. 尝试过「固定参考图校准」：识别一张打印图片，再按它修正标记位置。评估后撤回，恢复第 2 种。<!-- 补充撤回原因 -->
+4. 第三版（当前）：在第 2 种的基础上，从「少放错位置」和「画面更稳」两方面入手：放置质量门槛、跟踪原因提示、多角度观察引导、平面自动锁定与淡化、标记平滑（见 3.1 第 2～4 步）。不需要贴图片，也不依赖网络服务。
+   - 真机复测（vivo X200s，2026-10-27）：在「良好」位置放置，并从多个角度观察后提交，转开再回来主观感受明显改善，平面也不再持续变化。这是目测结论，没有量化。
+   - 同一时段 ARCore 底层报了大量 IMU 时间戳乱序和加速度计回调缺失，可能是这台设备的传感器问题，详见 README 已知问题。
 
-当前版本是第 2 种。剩余偏移在 [README.md](../README.md) 的已知问题中如实记录。如果以后需要跨会话或更高精度，可以考虑 Cloud Anchors 或图像标记。
+偏移的根源是 ARCore 本地定位的累积误差，回到原处时再统一修正，几厘米属于常见范围，单靠应用层无法完全消除。第三版的作用是：
+- 尽量避免在容易出错的位置和时机放置；
+- 引导用户给 ARCore 提供更完整的环境信息；
+- 让剩余的修正不表现为抖动。
+
+剩余偏移在 [README.md](../README.md) 的已知问题中如实记录。如果以后需要跨会话或更高精度，可以考虑：
+- Cloud Anchors：需要 Google 服务，国内网络通常无法使用；
+- 图像标记；
+- 在问题记录中附现场照片，帮助人工找回位置。
 
 ## 4. 演示视频录制脚本
 

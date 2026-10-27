@@ -92,6 +92,7 @@ namespace InspectionAR.EditorTools
             planeManager.requestedDetectionMode = PlaneDetectionMode.Horizontal;
             GetOrAdd<ARRaycastManager>(origin.gameObject);
             GetOrAdd<ARAnchorManager>(origin.gameObject);
+            GetOrAdd<ARPointCloudManager>(origin.gameObject); // 特征点用于评估放置位置的纹理是否充足
             var tapPlacer = GetOrAdd<ArTapPlacer>(origin.gameObject);
 
             var app = new GameObject("Inspection App");
