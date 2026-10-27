@@ -9,9 +9,8 @@
 | Unity、React、Go 完整源码 | `unity/`、`web/`、`backend/` | 已完成 |
 | README（版本、启动、真机配置后端地址、完成情况） | [README.md](../README.md) | 已完成 |
 | AI 使用记录 | [AI_LOG.md](../AI_LOG.md) | 已记录到当前为止的全部 Prompt，后续继续追加 |
-| 手机演示视频（3～5 分钟） | — | 未录制 |
-| 电脑演示视频（3～5 分钟） | — | 未录制 |
-| 分享链接（GitHub / Gitee / 网盘） | — | 未创建 |
+| 演示视频 | [videos/demo-1.mp4](../videos/demo-1.mp4)（1:28）、[videos/demo-2.mp4](../videos/demo-2.mp4)（2:06），均为手机录制 | 已交付 |
+| 分享链接 | <https://github.com/taiwei18/inspection-ar>（完整 Git 历史） | 已创建 |
 | APK（可选） | `unity/Builds/InspectionAR.apk`（不入库） | 已构建，可选附带 |
 
 ## 2. 必做功能逐项验收
@@ -201,10 +200,10 @@
 
 ## 5. 提交前检查
 
-- [ ] 所有改动已提交；推送到 GitHub / Gitee 时保留完整 Git 历史。
-- [ ] `Library/`、`Builds/`、`Logs/`、`node_modules/`、`backend/data/` 没有入库（已在 `.gitignore` 中）。
+- [x] 所有改动已提交；推送到 GitHub 时保留完整 Git 历史。
+- [x] `Library/`、`Builds/`、`Logs/`、`node_modules/`、`backend/data/` 没有入库（已在 `.gitignore` 中）。
 - [ ] `AI_LOG.md` 补到最后一条 Prompt，并填写每条的「采用 / 修改后采用 / 未采用」。
 - [ ] `README.md` 的已知问题和视频中看到的情况一致。
 - [ ] 没有提交 API Key、Token、账号或隐私信息；AI 对话分享链接已脱敏。
-- [ ] 视频已上传，链接在评审期间可访问；如果有提取码或有效期，写在提交说明里。
+- [x] 视频已随仓库提交（`videos/`），无需提取码。
 - [ ] （可选）附带 APK。

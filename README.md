@@ -6,6 +6,8 @@
 Unity AR (Android 真机) ──POST /api/issues──▶ Go 后端 (JSON 文件持久化) ◀──GET / PATCH── React 管理端 (浏览器)
 ```
 
+> 评审请先看 [SUBMISSION.md](SUBMISSION.md)：里面汇总了交付内容、演示视频位置和最短的启动步骤。
+
 | 目录 | 内容 |
 |---|---|
 | `backend/` | Go 后端，只用标准库 |
@@ -13,6 +15,8 @@ Unity AR (Android 真机) ──POST /api/issues──▶ Go 后端 (JSON 文件
 | `unity/` | Unity 项目（AR Foundation + ARCore） |
 | `AI_LOG.md` | AI 使用记录 |
 | `deploy/` | 部署到 Linux 服务器的脚本与配置（systemd、nginx） |
+| `videos/` | 演示视频 |
+| `SUBMISSION.md` | 交付说明（给评审的入口） |
 | `docs/DELIVERY.md` | 逐项验收、核心代码说明、演示录屏脚本 |
 
 ## 使用的版本
@@ -200,6 +204,11 @@ pwsh deploy/deploy.ps1
 
 ## 验收与交付
 
-按任务书提供完整 `unity/`、`web/`、`backend/` 源码、本文、[AI_LOG.md](AI_LOG.md) 和两段各 3～5 分钟演示视频。逐项验收、核心代码说明及录屏脚本见 [docs/DELIVERY.md](docs/DELIVERY.md)。
+交付内容、启动方式和视频位置汇总在 [SUBMISSION.md](SUBMISSION.md)：
 
-当前视频尚未录制，分享链接尚未创建；这些不应标记为已交付。使用 GitHub / Gitee 时保留完整 Git 历史；使用网盘时统一打包源码、文档和视频，提供评审期间可访问的链接及必要的提取码。APK 为可选材料，不要求公网部署。不要提交本地令牌、账号信息或含隐私的日志/测试数据。
+- 源码：`unity/`、`web/`、`backend/`；
+- 文档：本文、[AI_LOG.md](AI_LOG.md)；
+- 演示视频：`videos/` 目录下两段；
+- 逐项验收和核心代码说明：[docs/DELIVERY.md](docs/DELIVERY.md)。
+
+仓库保留完整 Git 历史。APK 不入库（任务书不强制），可以按上文「3. Unity 客户端」构建。
