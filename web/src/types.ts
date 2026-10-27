@@ -33,3 +33,6 @@ export const PRIORITY_LABEL: Record<Priority, string> = {
   medium: '中',
   low: '低',
 };
+
+/** 排序用：数值越小越靠前。 */
+export const PRIORITY_RANK: Record<Priority, number> = { high: 0, medium: 1, low: 2 };

@@ -31,10 +31,10 @@
 
 | # | 要求 | 实现位置 | 验证方式 | 状态 |
 |---|---|---|---|---|
-| 1 | 从后端获取问题列表 | [api.ts](../web/src/api.ts) `listIssues`，[App.tsx](../web/src/App.tsx) `load` | 浏览器打开 `localhost:5173`；手机提交后出现 | 已验证 |
+| 1 | 从后端获取问题列表 | [api.ts](../web/src/api.ts) `listIssues`，[useIssues.ts](../web/src/hooks/useIssues.ts) `reload` | 浏览器打开 `localhost:5173`；手机提交后出现 | 已验证 |
 | 2 | 至少显示标题、优先级、状态 | [IssueTable.tsx](../web/src/components/IssueTable.tsx)，另显示描述、坐标、时间 | 浏览器查看 | 已验证 |
-| 3 | 状态改为 open / in_progress / resolved | 行内下拉框 → `updateIssueStatus`（PATCH） | 浏览器操作，刷新后保持 | 已验证 |
-| 4 | 后端不可用时显示错误，不白屏 | `load` 捕获错误 → 错误条和重试按钮；`ErrorBoundary` 兜底 | 停掉 Go 后页面显示「无法加载问题列表」 | 已验证 |
+| 3 | 状态改为 open / in_progress / resolved | 行内下拉框或详情抽屉 → `updateIssueStatus`（PATCH） | 浏览器操作，刷新后保持 | 已验证 |
+| 4 | 后端不可用时显示错误，不白屏 | `reload` 捕获错误 → 错误提示框和重试按钮；`ErrorBoundary` 兜底 | 停掉 Go 后页面显示「无法加载问题列表」 | 已验证 |
 
 ### 2.3 Go 后端（任务书 3.3）
 
@@ -97,15 +97,21 @@
 
 ### 3.3 React：加载与修改状态
 
-- [App.tsx](../web/src/App.tsx) `load`
-  - 每 5 秒轮询一次。用 `requestSeq` 只采用最后一次请求的结果，避免慢请求覆盖新数据。
-  - 修改状态期间发出的轮询可能读到旧状态，用 `mutationVersion` 丢弃这些结果。
-- `changeStatus`
-  - 调 PATCH，成功后用后端返回的数据替换这一行。
-  - 下拉框的值绑定在 `issue.status` 上，请求失败时会自动保持原值。
+界面使用 shadcn/ui（Base UI 版本，Tailwind CSS v4）。组件源码在 `web/src/components/ui/`，由 shadcn CLI 生成，归项目所有，可以直接修改。数据逻辑和界面分开：
+
+- [useIssues.ts](../web/src/hooks/useIssues.ts) — 数据层，界面只读取状态并调用 `reload` / `changeStatus`
+  - `reload`：每 5 秒轮询一次。用 `requestSeq` 只采用最后一次请求的结果，避免慢请求覆盖新数据；修改状态期间发出的轮询可能读到旧状态，用 `mutationVersion` 丢弃这些结果。出现新问题时高亮 8 秒，并弹出通知。
+  - `changeStatus`：调 PATCH，成功后用后端返回的数据替换这一行，成功或失败都用 sonner 提示。下拉框的值绑定在 `issue.status` 上，请求失败时会自动保持原值。
 - [api.ts](../web/src/api.ts)
   - 请求 8 秒超时。
   - 优先显示后端的错误信息；Vite 代理连不上后端时返回没有错误体的 5xx，这时提示「后端服务不可用」。
+- [App.tsx](../web/src/App.tsx) — 页面组合
+  - 筛选（状态、优先级、关键词）和排序都在前端用 `useMemo` 计算。按优先级排序时依赖稳定排序，同级保持「最新在前」。
+  - 详情抽屉只保存选中问题的 ID，每次从最新列表中取数据，所以轮询或修改状态后抽屉内容会自动同步。
+- 其他组件
+  - [IssueTable.tsx](../web/src/components/IssueTable.tsx)：点击行打开详情。状态下拉框所在单元格阻止点击和键盘事件冒泡，避免改状态时同时打开详情。窄屏下优先级显示在标题下方。
+  - [IssueDetailSheet.tsx](../web/src/components/IssueDetailSheet.tsx)：完整描述、xyz 坐标、ID 复制、一键切换状态。
+  - [theme.ts](../web/src/lib/theme.ts)：明暗主题，跟随系统或手动切换。没有用 next-themes：它会往 React 树里插 `<script>`，React 19 会报警。
 
 ### 3.4 关于定位偏移的取舍
 

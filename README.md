@@ -21,6 +21,7 @@ Unity AR (Android 真机) ──POST /api/issues──▶ Go 后端 (JSON 文件
 | Go | 1.22 及以上（用到 1.22 的路由语法），开发和测试使用 1.27.0 |
 | Node.js | 22.x（开发使用 22.23） |
 | React / TypeScript / Vite | 19.3 / 7.0 / 8.3 |
+| 管理端 UI | shadcn/ui（Base UI 版本）+ Tailwind CSS 4.3，图标 lucide-react，提示 sonner |
 | Unity | 6000.0 LTS（本机验证：6000.0.85f1），内置渲染管线 |
 | AR Foundation / ARCore XR Plugin | 6.0.7 / 6.0.7 |
 | Input System | 1.20.0 |
@@ -126,7 +127,7 @@ USB 调试时也可以运行 `adb reverse tcp:8080 tcp:8080`，再把 App 后端
 
 - 必做功能已实现；实际验证范围、尚待录制的交付材料见 [验收与演示指南](docs/DELIVERY.md)。
 - 额外功能：
-  - React：每 5 秒自动刷新并高亮新上报的问题，可按状态 / 优先级筛选、搜索，有状态统计；
+  - React：shadcn/ui 风格界面，支持明暗主题，适配窄屏；每 5 秒自动刷新，新上报的问题会高亮并弹出通知；可按状态 / 优先级筛选、搜索、按优先级排序；状态统计卡可点击筛选，并提示高优先级积压；点击一行打开详情抽屉，可查看完整描述和坐标、复制 ID、一键切换状态；
   - Unity：标记颜色随优先级变化，在 App 内配置并测试后端地址；
   - Go：单元测试（存储、校验、接口、CORS），访问日志显示请求来源 IP，启动时列出可填给手机的地址。
 

@@ -1,206 +1,147 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { errorMessage, listIssues, updateIssueStatus } from './api';
-import { IssueTable } from './components/IssueTable';
-import { Toast, type ToastState } from './components/Toast';
-import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, type Issue, type Priority, type Status } from './types';
-
-const POLL_INTERVAL_MS = 5000;
-const NEW_HIGHLIGHT_MS = 8000;
+import { useMemo, useState } from 'react';
+import { RefreshCw, ScanLine } from 'lucide-react';
+import { cn } from 'cn';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
+import { IssueDetailSheet } from '@/components/IssueDetailSheet';
+import { IssueTable } from '@/components/IssueTable';
+import { DEFAULT_FILTERS, IssueToolbar, type Filters } from '@/components/IssueToolbar';
+import { StatCards } from '@/components/StatCards';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { useIssues } from '@/hooks/useIssues';
+import { formatTime } from '@/lib/format';
+import { PRIORITY_RANK, type Issue } from '@/types';
 
 export default function App() {
-  const [issues, setIssues] = useState<Issue[]>([]);
-  const [loaded, setLoaded] = useState(false); // 是否成功加载过至少一次
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
-  const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all');
-  const [keyword, setKeyword] = useState('');
-  const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(new Set());
-  const [newIds, setNewIds] = useState<ReadonlySet<string>>(new Set());
-  const [toast, setToast] = useState<ToastState | null>(null);
+  const data = useIssues();
+  const { issues, loaded, loading, loadError, lastUpdated } = data;
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // 只采用最近一次发起的列表请求结果，避免慢请求覆盖新数据。
-  const requestSeq = useRef(0);
-  // 修改状态期间发出的列表请求可能读到旧状态，用版本号把这些结果丢掉。
-  const mutationVersion = useRef(0);
-  const knownIds = useRef<Set<string> | null>(null);
-  const highlightTimer = useRef<number | undefined>(undefined);
-
-  const load = useCallback(async () => {
-    const seq = ++requestSeq.current;
-    const version = mutationVersion.current;
-    setLoading(true);
-    try {
-      const items = await listIssues();
-      if (seq !== requestSeq.current || version !== mutationVersion.current) return;
-
-      // 自动刷新时高亮新出现的问题，方便确认手机刚上报的记录。
-      const previous = knownIds.current;
-      if (previous) {
-        const fresh = items.filter((it) => !previous.has(it.id)).map((it) => it.id);
-        if (fresh.length > 0) {
-          setNewIds(new Set(fresh));
-          window.clearTimeout(highlightTimer.current);
-          highlightTimer.current = window.setTimeout(() => setNewIds(new Set()), NEW_HIGHLIGHT_MS);
-        }
-      }
-      knownIds.current = new Set(items.map((it) => it.id));
-
-      setIssues(items);
-      setLoaded(true);
-      setLoadError(null);
-      setLastUpdated(new Date());
-    } catch (err) {
-      if (seq === requestSeq.current) setLoadError(errorMessage(err));
-    } finally {
-      if (seq === requestSeq.current) setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const timer = window.setInterval(() => void load(), POLL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [autoRefresh, load]);
-
-  const changeStatus = useCallback(async (issue: Issue, status: Status) => {
-    if (issue.status === status) return;
-    setSavingIds((prev) => new Set(prev).add(issue.id));
-    mutationVersion.current++;
-    try {
-      const updated = await updateIssueStatus(issue.id, status);
-      setIssues((prev) => prev.map((it) => (it.id === updated.id ? updated : it)));
-      setToast({ kind: 'success', message: `「${updated.title}」已改为${STATUS_LABEL[updated.status]}` });
-    } catch (err) {
-      // 下拉框的值绑定在 issue.status 上，失败时自动保持原状态
-      setToast({ kind: 'error', message: `修改状态失败：${errorMessage(err)}` });
-    } finally {
-      mutationVersion.current++;
-      setSavingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(issue.id);
-        return next;
-      });
-    }
-  }, []);
-
-  const closeToast = useCallback(() => setToast(null), []);
-
-  const counts = useMemo(() => {
-    const result: Record<Status, number> = { open: 0, in_progress: 0, resolved: 0 };
-    for (const it of issues) {
-      if (it.status in result) result[it.status]++;
-    }
-    return result;
-  }, [issues]);
+  // 详情抽屉按 ID 从最新列表中取数据，轮询或修改状态后自动同步。
+  const selected = issues.find((it) => it.id === selectedId) ?? null;
 
   const visible = useMemo(() => {
-    const kw = keyword.trim().toLowerCase();
-    return issues.filter(
+    const kw = filters.keyword.trim().toLowerCase();
+    const list = issues.filter(
       (it) =>
-        (statusFilter === 'all' || it.status === statusFilter) &&
-        (priorityFilter === 'all' || it.priority === priorityFilter) &&
+        (filters.status === 'all' || it.status === filters.status) &&
+        (filters.priority === 'all' || it.priority === filters.priority) &&
         (!kw || it.title.toLowerCase().includes(kw) || it.description.toLowerCase().includes(kw)),
     );
-  }, [issues, statusFilter, priorityFilter, keyword]);
+    // 后端返回的顺序已是最新在前；按优先级排序时同级保持该顺序（sort 是稳定排序）
+    return filters.sort === 'priority'
+      ? [...list].sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority])
+      : list;
+  }, [issues, filters]);
 
   const connection = loadError ? 'offline' : loaded ? 'online' : 'checking';
 
   return (
-    <div className="page">
-      <header className="header">
-        <div>
-          <h1>巡检问题管理</h1>
-          <p className="muted">手机 AR 上报的问题会出现在这里{autoRefresh ? '，每 5 秒自动刷新' : ''}</p>
-        </div>
-        <div className="header-actions">
-          <span className={`connection connection-${connection}`}>
-            {connection === 'online' ? '后端在线' : connection === 'offline' ? '后端离线' : '连接中…'}
-          </span>
-          <label className="checkbox">
-            <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
-            自动刷新
-          </label>
-          <button className="btn" onClick={() => void load()} disabled={loading}>
-            {loading ? '刷新中…' : '刷新'}
-          </button>
+    <div className="min-h-svh bg-muted/40">
+      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <ScanLine className="size-4" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold">巡检问题管理</h1>
+            <p className="hidden truncate text-xs text-muted-foreground sm:block">现场 AR 上报 · 处理状态跟踪</p>
+          </div>
+
+          <div className="ml-auto flex items-center gap-1 sm:gap-3">
+            <ConnectionBadge state={connection} />
+            <Separator orientation="vertical" className="hidden h-5 sm:block" />
+            <label className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
+              <Switch checked={data.autoRefresh} onCheckedChange={data.setAutoRefresh} />
+              自动刷新
+            </label>
+            <Button variant="ghost" size="icon" onClick={() => void data.reload()} disabled={loading} aria-label="刷新">
+              <RefreshCw className={cn(loading && 'animate-spin')} />
+            </Button>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
-      {loadError && (
-        <div className="banner" role="alert">
-          <div>
-            <strong>{loaded ? '后端连接中断' : '无法加载问题列表'}</strong>
-            <span>
+      <main className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6">
+        {loadError && (
+          <Alert variant="destructive">
+            <AlertTitle>{loaded ? '后端连接中断' : '无法加载问题列表'}</AlertTitle>
+            <AlertDescription>
               {loadError}
-              {loaded && lastUpdated ? `。当前显示的是 ${lastUpdated.toLocaleTimeString('zh-CN', { hour12: false })} 的数据。` : ''}
-            </span>
-          </div>
-          <button className="btn" onClick={() => void load()} disabled={loading}>
-            重试
-          </button>
-        </div>
-      )}
+              {loaded && lastUpdated ? `。当前显示的是 ${formatTime(lastUpdated)} 的数据。` : '。'}
+            </AlertDescription>
+            <AlertAction>
+              <Button variant="outline" size="sm" onClick={() => void data.reload()} disabled={loading}>
+                重试
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
 
-      <section className="summary" aria-label="按状态统计">
-        {STATUSES.map((s) => (
-          <button
-            key={s}
-            className={`summary-card status-${s}${statusFilter === s ? ' active' : ''}`}
-            onClick={() => setStatusFilter((cur) => (cur === s ? 'all' : s))}
-            aria-pressed={statusFilter === s}
-          >
-            <span className="summary-count">{counts[s]}</span>
-            <span>
-              {STATUS_LABEL[s]} <code>{s}</code>
-            </span>
-          </button>
-        ))}
-      </section>
-
-      <section className="toolbar">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as Status | 'all')} aria-label="按状态筛选">
-          <option value="all">全部状态</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABEL[s]}
-            </option>
-          ))}
-        </select>
-        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value as Priority | 'all')} aria-label="按优先级筛选">
-          <option value="all">全部优先级</option>
-          {PRIORITIES.map((p) => (
-            <option key={p} value={p}>
-              {PRIORITY_LABEL[p]}优先级
-            </option>
-          ))}
-        </select>
-        <input type="search" placeholder="搜索标题或描述" value={keyword} onChange={(e) => setKeyword(e.target.value)} />
-        <span className="muted toolbar-meta">
-          显示 {visible.length} / {issues.length} 条
-          {lastUpdated && ` · 更新于 ${lastUpdated.toLocaleTimeString('zh-CN', { hour12: false })}`}
-        </span>
-      </section>
-
-      {loaded ? (
-        <IssueTable
-          issues={visible}
-          totalCount={issues.length}
-          savingIds={savingIds}
-          newIds={newIds}
-          onChangeStatus={changeStatus}
+        <StatCards
+          issues={issues}
+          loaded={loaded}
+          statusFilter={filters.status}
+          onFilter={(status) => setFilters((f) => ({ ...f, status }))}
         />
-      ) : (
-        <div className="empty">{loadError ? '启动 Go 后端后点击「重试」。' : '正在加载…'}</div>
-      )}
 
-      <Toast toast={toast} onClose={closeToast} />
+        <Card className="gap-0 py-0">
+          <CardHeader className="gap-3 border-b py-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <CardTitle>问题列表</CardTitle>
+              <CardDescription className="text-xs">
+                显示 {visible.length} / {issues.length} 条
+                {lastUpdated && ` · 更新于 ${formatTime(lastUpdated)}`}
+                {data.autoRefresh && ' · 每 5 秒自动刷新'}
+              </CardDescription>
+            </div>
+            <IssueToolbar filters={filters} onChange={setFilters} />
+          </CardHeader>
+          <CardContent className="px-0">
+            {!loaded && loadError ? (
+              <p className="px-4 py-16 text-center text-sm text-muted-foreground">启动 Go 后端后点击「重试」。</p>
+            ) : (
+              <IssueTable
+                issues={visible}
+                loaded={loaded}
+                totalCount={issues.length}
+                savingIds={data.savingIds}
+                newIds={data.newIds}
+                onChangeStatus={data.changeStatus}
+                onSelect={(it: Issue) => setSelectedId(it.id)}
+                onClearFilters={() => setFilters((f) => ({ ...DEFAULT_FILTERS, sort: f.sort }))}
+              />
+            )}
+          </CardContent>
+        </Card>
+      </main>
+
+      <IssueDetailSheet
+        issue={selected}
+        saving={selected ? data.savingIds.has(selected.id) : false}
+        onOpenChange={(open) => !open && setSelectedId(null)}
+        onChangeStatus={data.changeStatus}
+      />
     </div>
+  );
+}
+
+function ConnectionBadge({ state }: { state: 'online' | 'offline' | 'checking' }) {
+  const config = {
+    online: { label: '后端在线', dot: 'bg-emerald-500', variant: 'outline' as const },
+    offline: { label: '后端离线', dot: 'bg-destructive', variant: 'destructive' as const },
+    checking: { label: '连接中', dot: 'bg-muted-foreground animate-pulse', variant: 'outline' as const },
+  }[state];
+  return (
+    <Badge variant={config.variant} className="gap-1.5">
+      <span className={cn('size-1.5 rounded-full', config.dot)} aria-hidden />
+      {config.label}
+    </Badge>
   );
 }

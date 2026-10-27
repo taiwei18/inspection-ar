@@ -173,3 +173,48 @@ AI 在执行过程中提问、我作答的内容不是主动发送的 Prompt，�
 - 采用：AI 读取了分享的 Codex 对话，确认参考图代码已经全部撤回；把 P-010 中的「这个文件」理解为任务书，对照任务书新建了 [docs/DELIVERY.md](docs/DELIVERY.md)（逐项验收、核心代码说明、录屏脚本、提交前检查），补全了本文件 P-002～P-011，并修正了 README。
 - 验证：用 Unity 6000.0.85f1 以命令行模式按 Android 目标重新编译，`Assembly-CSharp` 和 `Assembly-CSharp-Editor` 都没有报错；全局搜索确认项目中已没有参考图或校准相关代码。
 - AI 自查：它起初在 DELIVERY.md 里自行写了撤回参考图的原因，这个原因我并没有说过，AI 发现后删除，改为留给我补充。
+
+## P-012
+
+- 工具：Claude Code
+- 目标：提交改动并推送到 GitHub
+
+### Prompt 原文
+
+> 提交吧 还有远程仓库地址为https://github.com/taiwei18/inspection-ar.git‘’
+
+### 结果
+
+- 采用：分两次提交（`be84133` Unity 真机验证、`b2cfb1f` 文档补全），添加远程 `origin` 并推送 `main`。
+- 提交前，AI 清理了参考图方案留下的空文件夹（`Assets/InspectionAR/Reference`、根目录 `scripts/`），并把 XR Simulation 的个人偏好设置加入 `.gitignore`。
+- 验证：`git ls-remote origin main` 与本地 `b2cfb1f` 一致。
+
+## P-013
+
+- 工具：Claude Code
+- 目标：把管理端改成 shadcn 风格，并改进交互体验
+
+### Prompt 原文
+
+> 优化管理端uiux，ui使用shadcn风格
+
+### 结果
+
+- 采用 / 修改后采用 / 未采用：<!-- 审阅后填写 -->
+- AI 接入 Tailwind CSS v4 和 shadcn/ui（CLI 默认选了 Base UI 版本），重写了管理端：
+  - 顶栏：连接状态、自动刷新开关、明暗主题；
+  - 统计卡：可点击筛选，提示高优先级积压；
+  - 列表：搜索、筛选、按优先级排序；骨架屏和空状态；
+  - 详情抽屉：完整信息、复制 ID、一键改状态；
+  - 新问题通知和操作结果提示（sonner）；
+  - 窄屏布局适配。
+  数据逻辑抽到 `hooks/useIssues.ts`，沿用原来的防竞态写法。
+- AI 自查并修正的问题：
+  1. 窄屏下标题列被挤得只剩一两个字 → 窄屏把优先级移到标题下方；
+  2. shadcn 默认的 next-themes 在 React 19 下报「Encountered a script tag」警告 → 改为自写的小主题模块，防闪烁脚本放进 `index.html`。
+- 验证：
+  - `npm run build`（含类型检查）通过；
+  - 用数据副本另起一套测试后端和页面（端口 18080 / 5174），在浏览器中验证了：行内改状态不会误打开详情；详情抽屉改状态后列表同步；深色模式；手机宽度布局；搜索无结果时的空状态；停掉后端时显示错误提示；
+  - 新开标签页确认控制台无报错。真实数据没有被改动。
+- 新增依赖：`cn` 包由 shadcn 作者维护（仓库 `shadcn-ui/cn`），用来替代 `clsx + tailwind-merge`；AI 安装前核对过来源。
+

@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "web", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "web-test",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "web", "run", "dev", "--", "--port", "5174", "--strictPort"],
+      "env": { "VITE_PROXY_TARGET": "http://127.0.0.1:18080" },
+      "port": 5174
     }
   ]
 }
