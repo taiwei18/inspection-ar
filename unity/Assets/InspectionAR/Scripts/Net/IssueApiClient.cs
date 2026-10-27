@@ -32,6 +32,17 @@ namespace InspectionAR.Net
             return Send("POST", "/api/issues", JsonUtility.ToJson(body), onSuccess, onError);
         }
 
+        public IEnumerator ListIssues(Action<IssueList> onSuccess, Action<string> onError)
+        {
+            return Send("GET", "/api/issues", null, onSuccess, onError);
+        }
+
+        public IEnumerator UpdateStatus(string id, string status, Action<Issue> onSuccess, Action<string> onError)
+        {
+            var body = JsonUtility.ToJson(new StatusUpdateRequest { status = status });
+            return Send("PATCH", "/api/issues/" + UnityWebRequest.EscapeURL(id), body, onSuccess, onError);
+        }
+
         IEnumerator Send<T>(string method, string path, string jsonBody, Action<T> onSuccess, Action<string> onError)
         {
             var url = baseUrl() + path;

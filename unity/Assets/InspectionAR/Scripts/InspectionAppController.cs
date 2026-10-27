@@ -1,3 +1,6 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
 using InspectionAR.AR;
 using InspectionAR.Data;
 using InspectionAR.Net;
@@ -13,6 +16,8 @@ namespace InspectionAR
     /// 提交失败时保留标记和表单内容，用户可以直接重试。
     /// 定位稳定性相关：放置质量门槛（PlacementQuality）、多角度观察引导（ViewCoverage）、
     /// 平面锁定与淡化（PlaneDisplay）、标记平滑（IssueMarker）。
+    /// 状态回传：每 5 秒拉取问题列表，管理端修改状态后，本次放置的标记样式随之更新；
+    /// 历史问题列表面板中可以在手机上修改状态、在 AR 中查找本次放置的标记。
     /// </summary>
     public class InspectionAppController : MonoBehaviour
     {
@@ -35,6 +40,15 @@ namespace InspectionAR
         bool submitting;
         int submittedCount;
         string lastStatus;
+
+        // ---- 状态回传 ----
+        const float SyncIntervalSeconds = 5f;
+        readonly Dictionary<string, IssueMarker> markersById = new Dictionary<string, IssueMarker>(); // 本次会话提交的标记
+        readonly Dictionary<string, string> knownStatus = new Dictionary<string, string>();          // 上次同步看到的状态
+        Issue[] latestIssues = Array.Empty<Issue>();
+        bool syncRequested;
+        bool updatingStatus;
+        int mutationVersion; // 手机端修改状态期间发出的列表请求可能读到旧状态，用版本号丢弃
 
         void Awake()
         {
@@ -60,6 +74,7 @@ namespace InspectionAR
             ui.CancelClicked += CancelPending;
             ui.TestConnectionClicked += TestConnection;
             ui.PlaneLockClicked += TogglePlaneLock;
+            ui.ListClicked += OpenIssueList;
             ui.ServerUrlEdited += OnServerUrlEdited;
         }
 
@@ -70,6 +85,7 @@ namespace InspectionAR
             ui.CancelClicked -= CancelPending;
             ui.TestConnectionClicked -= TestConnection;
             ui.PlaneLockClicked -= TogglePlaneLock;
+            ui.ListClicked -= OpenIssueList;
             ui.ServerUrlEdited -= OnServerUrlEdited;
         }
 
@@ -77,6 +93,19 @@ namespace InspectionAR
         {
             ui.SetServerUrl(BackendSettings.BaseUrl);
             ui.SetPlaneLocked(false);
+
+            // 列表面板在 IssueReportUI.Awake 中创建，到 Start 时一定已经存在
+            ui.ListPanel.HasMarker = id => markersById.ContainsKey(id);
+            ui.ListPanel.StatusChangeRequested += ChangeStatusFromPhone;
+            ui.ListPanel.LocateRequested += LocateMarker;
+            StartCoroutine(SyncLoop());
+        }
+
+        void OnDestroy()
+        {
+            if (ui == null || ui.ListPanel == null) return;
+            ui.ListPanel.StatusChangeRequested -= ChangeStatusFromPhone;
+            ui.ListPanel.LocateRequested -= LocateMarker;
         }
 
         void Update()
@@ -198,10 +227,16 @@ namespace InspectionAR
         {
             submitting = false;
             ui.SetSubmitting(false);
-            if (pendingMarker != null) pendingMarker.ShowSubmitted(issue);
+            if (pendingMarker != null)
+            {
+                pendingMarker.ShowSubmitted(issue);
+                markersById[issue.id] = pendingMarker; // 之后同步到状态变化时更新这个标记的样式
+            }
+            knownStatus[issue.id] = issue.status;
             pendingMarker = null; // 已提交的标记留在场景中，不再跟随点击移动
             pendingAnchor = null;
             submittedCount++;
+            RequestSync();
 
             ui.ResetForm();
             ui.HideForm();
@@ -228,6 +263,134 @@ namespace InspectionAR
             else if (pendingMarker != null) Destroy(pendingMarker.gameObject);
             pendingAnchor = null;
             pendingMarker = null;
+        }
+
+        // ---------- 状态回传 ----------
+
+        /// <summary>每 5 秒拉取一次问题列表；RequestSync 可以让下一次同步立即开始。请求按顺序进行，不会并发。</summary>
+        IEnumerator SyncLoop()
+        {
+            while (true)
+            {
+                var version = mutationVersion;
+                yield return api.ListIssues(list => OnIssuesSynced(list, version), OnSyncFailed);
+
+                var waited = 0f;
+                while (waited < SyncIntervalSeconds && !syncRequested)
+                {
+                    waited += Time.unscaledDeltaTime;
+                    yield return null;
+                }
+                syncRequested = false;
+            }
+        }
+
+        void RequestSync() => syncRequested = true;
+
+        void OnIssuesSynced(IssueList list, int version)
+        {
+            if (version != mutationVersion) return; // 请求期间手机端改过状态，这份结果可能是旧的，等下一轮
+
+            var items = list.items ?? Array.Empty<Issue>();
+            string changedTitle = null;
+            var changedCount = 0;
+            foreach (var issue in items)
+            {
+                if (markersById.TryGetValue(issue.id, out var marker))
+                {
+                    if (knownStatus.TryGetValue(issue.id, out var previous) && previous != issue.status)
+                    {
+                        changedCount++;
+                        changedTitle = $"后台已将「{issue.title}」改为{IssueStatus.Label(issue.status)}";
+                    }
+                    marker.ApplyIssue(issue); // 标题、优先级、状态都以后端为准
+                }
+                knownStatus[issue.id] = issue.status;
+            }
+            if (changedCount == 1) ui.ShowToast(changedTitle, ToastKind.Info, 4f);
+            else if (changedCount > 1) ui.ShowToast($"后台更新了 {changedCount} 个本次标记的状态", ToastKind.Info, 4f);
+
+            latestIssues = items;
+            ui.SetSyncStatus($"已同步 {DateTime.Now:HH:mm:ss} · 共 {items.Length} 条", true);
+            ui.SetIssueCount(items.Length);
+            ui.ListPanel.SetIssues(items);
+        }
+
+        void OnSyncFailed(string error)
+        {
+            // 不弹提示条（每 5 秒一次会刷屏），只在顶栏显示；保留上次同步的数据
+            ui.SetSyncStatus("同步失败，显示的是上次的数据；请检查后端地址或网络", false);
+            Debug.Log("Inspection AR: sync failed " + error);
+        }
+
+        void OpenIssueList()
+        {
+            ui.ListPanel.SetIssues(latestIssues);
+            ui.ListPanel.Open();
+            RequestSync();
+        }
+
+        /// <summary>在手机上修改状态（现场处理完可以直接标记已解决）。</summary>
+        void ChangeStatusFromPhone(Issue issue, string status)
+        {
+            if (updatingStatus) return;
+            updatingStatus = true;
+            mutationVersion++;
+            ui.ListPanel.SetBusy(true);
+            StartCoroutine(api.UpdateStatus(issue.id, status,
+                updated =>
+                {
+                    FinishStatusUpdate();
+                    var index = Array.FindIndex(latestIssues, it => it.id == updated.id);
+                    if (index >= 0) latestIssues[index] = updated;
+                    knownStatus[updated.id] = updated.status; // 自己改的，不再提示「后台已修改」
+                    if (markersById.TryGetValue(updated.id, out var marker)) marker.ApplyIssue(updated);
+                    ui.ListPanel.SetIssues(latestIssues);
+                    ui.ShowToast($"已将「{updated.title}」改为{IssueStatus.Label(updated.status)}", ToastKind.Success);
+                    RequestSync();
+                },
+                error =>
+                {
+                    FinishStatusUpdate();
+                    ui.ShowToast("修改状态失败：" + error, ToastKind.Error, 6f);
+                }));
+        }
+
+        void FinishStatusUpdate()
+        {
+            updatingStatus = false;
+            mutationVersion++;
+            ui.ListPanel.SetBusy(false);
+        }
+
+        /// <summary>让本次放置的标记闪动，并提示它相对手机的方向和距离。</summary>
+        void LocateMarker(Issue issue)
+        {
+            if (!markersById.TryGetValue(issue.id, out var marker)) return;
+            ui.ListPanel.Close();
+            marker.Highlight(4f);
+            if (!marker.HasTracking || arCamera == null)
+            {
+                ui.ShowToast("这个标记暂时不在跟踪中，请回到放置区域附近，对准原来的位置", ToastKind.Info, 4f);
+                return;
+            }
+            ui.ShowToast($"「{issue.title}」{DescribeDirection(marker.AnchorPosition)}，正在闪动", ToastKind.Info, 4f);
+        }
+
+        string DescribeDirection(Vector3 target)
+        {
+            var local = arCamera.transform.InverseTransformPoint(target);
+            var distance = new Vector2(local.x, local.z).magnitude;
+            var angle = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg; // 0 = 正前方，正值偏右
+            var side = angle >= 0f ? "右" : "左";
+            var abs = Mathf.Abs(angle);
+            string direction;
+            if (abs < 25f) direction = "正前方";
+            else if (abs < 70f) direction = side + "前方";
+            else if (abs < 110f) direction = side + "侧";
+            else if (abs < 155f) direction = side + "后方";
+            else direction = "正后方";
+            return $"在你{direction}约 {distance:F1} 米";
         }
 
         void TestConnection()

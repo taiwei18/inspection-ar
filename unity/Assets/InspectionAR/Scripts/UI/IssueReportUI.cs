@@ -27,6 +27,7 @@ namespace InspectionAR.UI
         public event Action CancelClicked;
         public event Action TestConnectionClicked;
         public event Action PlaneLockClicked;
+        public event Action ListClicked;
         public event Action<string> ServerUrlEdited;
 
         static readonly Color PanelColor = new Color(0.08f, 0.1f, 0.14f, 0.88f);
@@ -45,6 +46,8 @@ namespace InspectionAR.UI
         Text positionText;
         Text qualityText;
         Text planeLockLabel;
+        Text syncText;
+        Text listButtonLabel;
         Text toastText;
         Text submitLabel;
         InputField serverInput;
@@ -59,6 +62,9 @@ namespace InspectionAR.UI
         public string Title => titleInput.text;
         public string Description => descriptionInput.text;
         public string SelectedPriority { get; private set; } = IssuePriority.Medium;
+
+        /// <summary>历史问题列表面板，由「问题列表」按钮打开。</summary>
+        public IssueListPanel ListPanel { get; private set; }
 
         void Awake()
         {
@@ -90,6 +96,14 @@ namespace InspectionAR.UI
         }
 
         public void SetPlaneLocked(bool locked) => planeLockLabel.text = locked ? "继续扫描" : "锁定平面";
+
+        public void SetSyncStatus(string text, bool ok)
+        {
+            syncText.text = text;
+            syncText.color = ok ? LabelColor : PoorQualityColor;
+        }
+
+        public void SetIssueCount(int count) => listButtonLabel.text = $"问题列表（{count}）";
 
         public void ResetForm()
         {
@@ -162,6 +176,7 @@ namespace InspectionAR.UI
 
             BuildTopBar(safeArea);
             BuildForm(safeArea);
+            ListPanel = new IssueListPanel(safeArea); // 在提示条之前创建，提示条显示在面板上方
             BuildToast(safeArea);
         }
 
@@ -185,6 +200,14 @@ namespace InspectionAR.UI
             var lockButton = UiFactory.CreateButton(row, "锁定平面", NeutralColor, 84, () => PlaneLockClicked?.Invoke());
             UiFactory.SetWidth(lockButton, 210, 0);
             planeLockLabel = lockButton.GetComponentInChildren<Text>();
+
+            // 第二行：与后端的同步状态 + 历史问题列表入口
+            var syncRow = UiFactory.CreateRow(bar.transform, 76, 12, equalWidths: false);
+            syncText = UiFactory.CreateText(syncRow, "正在同步问题列表…", 28, LabelColor, TextAnchor.MiddleLeft);
+            UiFactory.SetWidth(syncText, 0, 1);
+            var listButton = UiFactory.CreateButton(syncRow, "问题列表", AccentColor, 76, () => ListClicked?.Invoke());
+            UiFactory.SetWidth(listButton, 280, 0);
+            listButtonLabel = listButton.GetComponentInChildren<Text>();
         }
 
         void BuildForm(Transform parent)

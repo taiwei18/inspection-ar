@@ -95,8 +95,11 @@ namespace InspectionAR.UI
             return input;
         }
 
-        /// <summary>纵向排列子物体，并让自身高度随内容变化。</summary>
-        public static void AddVerticalLayout(GameObject go, int padding, float spacing)
+        /// <summary>
+        /// 纵向排列子物体。fitHeight 为 true 时自身高度随内容变化；
+        /// 高度由父级布局或锚点决定的容器（如全屏面板、嵌套在布局里的分组）传 false。
+        /// </summary>
+        public static void AddVerticalLayout(GameObject go, int padding, float spacing, bool fitHeight = true)
         {
             var layout = go.AddComponent<VerticalLayoutGroup>();
             layout.padding = new RectOffset(padding, padding, padding, padding);
@@ -106,6 +109,7 @@ namespace InspectionAR.UI
             layout.childForceExpandWidth = true;
             layout.childForceExpandHeight = false;
 
+            if (!fitHeight) return;
             var fitter = go.AddComponent<ContentSizeFitter>();
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         }

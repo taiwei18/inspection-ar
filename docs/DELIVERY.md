@@ -72,6 +72,12 @@
    - **多角度观察引导** — [ViewCoverage.cs](../unity/Assets/InspectionAR/Scripts/AR/ViewCoverage.cs)：标记周围一圈分成 8 个 45° 扇区，统计用户从几个方向看过标记，建议至少 3 个。从多个角度看过的区域，ARCore 记录的环境信息更完整，转开再回来时修正得更准。只做提示，不强制。
    - **跟踪原因提示** — `NotTrackingHint`：把 ARCore 的跟踪受限原因翻译成能照做的话，例如「光线不足」「画面缺少纹理」「移动太快」「正在重新定位」。
 4. **标记显示** — [IssueMarker.cs](../unity/Assets/InspectionAR/Scripts/AR/IssueMarker.cs)
+   - 样式：
+     - 球头和杆表示优先级：高=红、中=橙、低=灰蓝；
+     - 底座和悬浮标签的背景表示状态：待处理=蓝、处理中=琥珀、已解决=绿，与网页一致；
+     - 处理中时球头上下浮动，已解决时球头和杆变灰；
+     - 待提交时整体为黄色并闪动。
+   - 悬浮标签由 [MarkerLabel.cs](../unity/Assets/InspectionAR/Scripts/AR/MarkerLabel.cs) 实现：一个 World Space Canvas，显示「标题 + 状态 · 优先级」，每帧转向镜头。它没有挂 GraphicRaycaster，所以不会拦截放置标记的点击。
    - 平滑：`LateUpdate` 用与帧率无关的指数平滑（时间常数 0.15 秒）跟随锚点，ARCore 的微小修正不会表现为抖动；跳变超过 30cm 时直接跳过去。上报坐标用锚点的真实位置（`AnchorPosition`），不用平滑中的显示位置。
    - 跟踪丢失时的保护：锚点或会话不在 `Tracking` 状态时隐藏标记、拒绝提交；恢复后直接显示在修正后的位置，避免把漂移中的位置上报出去。
 5. **提交** — `Submit` → [IssueApiClient.cs](../unity/Assets/InspectionAR/Scripts/Net/IssueApiClient.cs) `Send<T>`
@@ -85,6 +91,23 @@
    - [InspectionProjectSetup.cs](../unity/Assets/InspectionAR/Editor/InspectionProjectSetup.cs)：两个菜单，分别一键配置 Android 构建参数、生成场景和预制体，避免手工连线出错。
    - [AndroidBuild.cs](../unity/Assets/InspectionAR/Editor/AndroidBuild.cs)：菜单「3. 构建 APK」，也可以在命令行用 `-executeMethod` 调用，失败时返回非 0 退出码。
    - [AndroidBuildCompatibility.cs](../unity/Assets/InspectionAR/Editor/AndroidBuildCompatibility.cs)：构建时向 `gradle.properties` 追加 `android.uniquePackageNames=false`，解决 ARCore 6.0.x 两个 AAR 命名空间相同、与 AGP 9 冲突的问题。
+
+#### 状态回传与历史问题列表（加分项）
+
+对应任务书第 7 节的「根据优先级或状态改变 AR 标记样式」「Unity 历史问题列表及编辑」。后端没有改动，复用 `GET /api/issues` 和 `PATCH /api/issues/{id}`。
+
+- **定时同步**：[InspectionAppController.cs](../unity/Assets/InspectionAR/Scripts/InspectionAppController.cs) 中的 `SyncLoop` 协程。
+  - 每 5 秒拉取一次列表，请求按顺序进行，不会并发；
+  - 提交成功、手机端改状态、打开列表时，用 `RequestSync` 立即同步一次；
+  - 同步失败只在顶栏提示，保留上次的数据，不用弹窗刷屏。
+- **状态变化回传**：`OnIssuesSynced` 把本次会话提交的标记（`markersById`）按最新数据更新样式。和上次看到的状态（`knownStatus`）不同时，弹出提示「后台已将「X」改为已解决」。
+- **防止旧数据覆盖**：手机端改状态期间发出的列表请求，可能读到改之前的状态，所以用 `mutationVersion` 丢弃这类结果，做法与网页端一致。
+- **历史问题列表**：[IssueListPanel.cs](../unity/Assets/InspectionAR/Scripts/UI/IssueListPanel.cs)，全屏面板。
+  - 列出后端的全部问题；
+  - 点开一条，可以查看详情，并在手机上修改状态；
+  - 本次会话放置的问题标「本次」，可以「在 AR 中查找」：标记闪动，并提示它相对手机的方向和距离，例如「在你左前方约 1.8 米」；
+  - 之前会话的问题标注「不在本次 AR 会话中」，因为暂不支持跨会话定位。
+  - 只有数据变化时才重建列表，避免每次同步都打断滚动。
 
 **坐标含义**：上报的 `x/y/z` 是本次 AR 会话坐标系下的位置（米），原点是 App 启动时手机的位置，App 重启后原点会变（任务书不要求恢复）。
 
@@ -156,10 +179,13 @@
 | 3 | 点「测试连接」按钮和输入框，再点表单空白处 | 都没有放出标记（任务书 3.1-6） |
 | 4 | 点击平面，再点另一处 | 黄色闪动标记出现并移动，表单显示 x/y/z |
 | 5 | 不填标题直接提交 | 「请填写标题（必填）」 |
-| 6 | 填写标题、描述，选「高」优先级后提交 | 绿色「提交成功」和 ID，标记变红 |
-| 7 | 再放一个标记，选「低」优先级提交 | 标记变绿 |
-| 8 | （演示失败提示）电脑上按 Ctrl+C 停掉 Go，再提交一条 | 红色「提交失败：无法连接后端…」，表单仍在；重启 Go 后再提交成功 |
+| 6 | 填写标题、描述，选「高」优先级后提交 | 绿色「提交成功」和 ID；标记球头变红，底座和标签变蓝（待处理），标签显示标题 |
+| 7 | 再放一个标记，选「低」优先级提交 | 球头为灰蓝色，与第一个标记区分 |
+| 8 | （演示失败提示）电脑上按 Ctrl+C 停掉 Go，再提交一条 | 红色「提交失败：无法连接后端…」，表单仍在；顶栏显示「同步失败」；重启 Go 后再提交成功 |
 | 9 | 转开相机再转回来 | 标记仍在原位置附近（口头说明已知的几厘米偏移） |
+| 10 | 电脑上把第一个问题改为「处理中」（与视频二第 4 步同时） | 5 秒内手机弹出「后台已将……改为处理中」，标签变琥珀色，球头上下浮动 |
+| 11 | 点「问题列表」，选中第二个问题，点「已解决」 | 提示修改成功；标记球头变灰、标签变绿；电脑网页 5 秒内同步 |
+| 12 | 列表里选中第一个问题，点「在 AR 中查找」 | 面板关闭，标记闪动，提示「在你……约 X 米」 |
 
 ### 视频二：电脑（3～5 分钟）
 
@@ -168,7 +194,7 @@
 | 1 | `cd backend && go run .` | 日志中的数据文件路径、「已加载 N 条」、局域网地址 |
 | 2 | `cd web && npm run dev`，浏览器打开 `localhost:5173` | 问题列表、状态统计、「后端在线」 |
 | 3 | 手机提交一条问题 | 5 秒内自动出现带「新」标签的记录；Go 日志出现来自手机 IP 的 `POST /api/issues 201` |
-| 4 | 把状态依次改为「处理中」「已解决」 | 成功提示，更新时间变化 |
+| 4 | 把状态依次改为「处理中」「已解决」 | 成功提示，更新时间变化；（若同时录手机）手机上的标记样式随之变化 |
 | 5 | 在终端按 Ctrl+C 停掉 Go | 页面出现「后端连接中断」错误条，不白屏 |
 | 6 | 再次 `go run .` | 日志显示「已加载 N 条」；页面自动恢复，状态仍是修改后的值（重启后数据仍在） |
 | 7 | （可选）`go test ./...` | 测试全部通过 |
